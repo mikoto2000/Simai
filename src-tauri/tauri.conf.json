@@ -11,7 +11,7 @@
   },
   "tauri": {
     "cli": {
-      "description": "Simple SVG previewer.",
+      "description": "Simple Markdown previewer.",
       "args": [
         {
           "name": "file",
