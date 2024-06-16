@@ -10,6 +10,16 @@
     "version": "0.0.0"
   },
   "tauri": {
+    "cli": {
+      "description": "Simple SVG previewer.",
+      "args": [
+        {
+          "name": "file",
+          "index": 1,
+          "takesValue": true
+        }
+      ]
+    },
     "allowlist": {
       "all": false,
       "shell": {
