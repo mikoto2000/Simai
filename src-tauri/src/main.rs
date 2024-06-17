@@ -2,21 +2,32 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::{path::Path, sync::mpsc};
 use std::{process, thread};
 
 use notify::event::ModifyKind;
-use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{EventKind, RecursiveMode, Watcher};
 use serde_json::value;
 use tauri::api::cli::ArgData;
 
 use tauri::{App, Manager};
 
-fn start_watch(file_path: &str, stop_rx: MutexGuard<mpsc::Receiver<()>>) -> notify::Result<()> {
+fn start_watch(file_path: &str, stop_rx: &mpsc::Receiver<()>) -> notify::Result<()> {
+
+    // チャンネルの停止依頼を空にする
+    loop {
+        if !stop_rx.try_recv().is_ok() {
+            break;
+        }
+    }
+
     let path = Path::new(file_path).as_ref();
     let (tx, rx) = mpsc::channel();
-    let mut watcher = RecommendedWatcher::new(tx, Config::default()).unwrap();
+    let mut watcher = notify::recommended_watcher(move |event| {
+        tx.send(event).unwrap();
+    })
+    .unwrap();
     watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
 
     // 監視イベント受信処理処理スレッド
@@ -38,12 +49,18 @@ fn start_watch(file_path: &str, stop_rx: MutexGuard<mpsc::Receiver<()>>) -> noti
     // このスレッドが終了しないようにループを作り、
     loop {
         // stop_rx チャンネルをチェックしてシグナルを受信したらループを終了
-        if stop_rx.try_recv().is_ok() {
+        if stop_rx.recv().is_ok() {
             println!("Shutting down watcher.");
+
+            // チャンネルの停止依頼を空にする
+            loop {
+                if !stop_rx.try_recv().is_ok() {
+                    break;
+                }
+            }
+
             break;
         }
-        println!("watching...");
-        thread::sleep(std::time::Duration::from_secs(1));
     }
 
     Ok(())
@@ -56,75 +73,42 @@ fn main() {
 
             // シミュレーション用の送受信チャンネル
             let (stop_tx, stop_rx) = std::sync::mpsc::channel();
-            let stop_tx_arc = Arc::new(Mutex::new(stop_tx));
-            let stop_rx_arc = Arc::new(Mutex::new(stop_rx));
 
-            let ss = {
-                let stop_rx_arc = Arc::clone(&stop_rx_arc);
-                Arc::new(Mutex::new(move |file_path: Box<&str>| {
-                    start_watch(*file_path, stop_rx_arc.lock().unwrap()).unwrap();
-                }))
-            };
-
-            let ss2 = {
-                let stop_rx_arc = Arc::clone(&stop_rx_arc);
-                Arc::new(Mutex::new(move |file_path: Box<&str>| {
-                    start_watch(*file_path, stop_rx_arc.lock().unwrap()).unwrap();
-                }))
-            };
+            let ss = Arc::new(Mutex::new(move |file_path: &str| {
+                start_watch(file_path, &stop_rx).unwrap();
+            }));
 
             let stop_watch = {
-                let stop_tx_arc = Arc::clone(&stop_tx_arc);
-                Arc::new(Mutex::new(move || {
-                    stop_tx_arc.lock().unwrap().send(()).unwrap();
-                }))
+                move || {
+                    stop_tx.send(()).unwrap();
+                    println!("stoped.");
+                }
             };
 
             if file_path != "" {
                 let ss = Arc::clone(&ss);
                 thread::spawn(move || {
-                    let ss = ss.lock();
-                    let ss = ss.unwrap();
-                    ss(Box::from(file_path.as_str()));
+                    ss.lock().unwrap()(file_path.as_str());
                 });
-            }
+            };
 
             // グローバルリスナーの設定
             app.listen_global("start_watch", move |event| {
                 let ss = Arc::clone(&ss);
+                println!("start_watch");
                 thread::spawn(move || {
                     let file_path = event.payload().unwrap().to_string();
-
                     let file_path = serde_json::from_str::<&str>(&file_path).unwrap();
 
-                    let ss = ss.lock();
-                    let ss = ss.unwrap();
-                    ss(Box::from(file_path));
+                    ss.lock().unwrap()(file_path);
                 });
             });
 
             app.listen_global("stop_watch", {
-                let stop_watch = Arc::clone(&stop_watch);
+                println!("stop_watch");
                 move |_| {
-                    stop_watch.lock().unwrap()();
+                    stop_watch();
                 }
-            });
-
-            app.listen_global("selected_file", move |event| {
-                let ss2 = Arc::clone(&ss2);
-                let stop_watch = Arc::clone(&stop_watch);
-                let _event_payload = event.payload();
-                stop_watch.lock().unwrap()();
-
-                thread::spawn(move || {
-                    let file_path = event.payload().unwrap().to_string();
-
-                    let file_path = serde_json::from_str::<&str>(&file_path).unwrap();
-
-                    let ss2 = ss2.lock();
-                    let ss2 = ss2.unwrap();
-                    ss2(Box::from(file_path));
-                });
             });
 
             Ok(())
