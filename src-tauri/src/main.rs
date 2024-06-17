@@ -15,7 +15,11 @@ use tauri::api::cli::ArgData;
 
 use tauri::{App, AppHandle, Manager};
 
-fn start_watch(app_handle: &AppHandle, file_path: &str, stop_rx: &mpsc::Receiver<()>) -> notify::Result<()> {
+fn start_watch(
+    app_handle: &AppHandle,
+    file_path: &str,
+    stop_rx: &mpsc::Receiver<()>,
+) -> notify::Result<()> {
     // チャンネルの停止依頼を空にする
     loop {
         if !stop_rx.try_recv().is_ok() {
@@ -31,6 +35,10 @@ fn start_watch(app_handle: &AppHandle, file_path: &str, stop_rx: &mpsc::Receiver
     .unwrap();
     watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
 
+    // 初回の描画
+    let file_contents = get_file_content(file_path);
+    app_handle.emit_all("update_md", file_contents).unwrap();
+
     // 監視イベント受信処理処理スレッド
     let app_handle = app_handle.clone();
     thread::spawn(move || {
@@ -42,9 +50,8 @@ fn start_watch(app_handle: &AppHandle, file_path: &str, stop_rx: &mpsc::Receiver
                         EventKind::Modify(ModifyKind::Data(_)) => {
                             println!("Change: {:?}", path);
 
-                            let mut file = File::open(path).unwrap();
-                            let mut file_contents = String::new();
-                            file.read_to_string(&mut file_contents).unwrap();
+                            let file_contents =
+                                get_file_content(&path.into_os_string().into_string().unwrap());
 
                             app_handle.emit_all("update_md", file_contents).unwrap();
                         }
@@ -176,4 +183,11 @@ fn get_value(args: &HashMap<String, ArgData>, key: &str) -> value::Value {
     let option_value = &option_data_wraped.value;
 
     return option_value.clone();
+}
+
+fn get_file_content(path: &str) -> String {
+    let mut file = File::open(path).unwrap();
+    let mut file_contents = String::new();
+    file.read_to_string(&mut file_contents).unwrap();
+    return file_contents;
 }
