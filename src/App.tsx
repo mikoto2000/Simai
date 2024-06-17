@@ -12,6 +12,8 @@ function App() {
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
+  const [cssContent, setCssContent] = useState<string | undefined>(undefined);
+
   const [content, setContent] = useState<string>("");
 
   useEffect(() => {
@@ -58,12 +60,18 @@ function App() {
 
   return (
     <>
+      <style>
+        {cssContent ? cssContent : ""}
+      </style>
       <div className="container">
         <h1>Welcome to Simai!</h1>
         <label>
           Selected file: {selectedFile}
           <button onClick={(_) => { openFileSelectDialog() }}>select file</button>
         </label>
+        <p>
+          <input type="file" onChange={applyCss} accept=".css" />
+        </p>
       </div>
       <div>
         <ReactMarkdown remarkPlugins={[remarkGfm]} children={content} />
