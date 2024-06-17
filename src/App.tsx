@@ -80,14 +80,17 @@ function App() {
       <style>
         {cssContent ? cssContent : ""}
       </style>
+      <style>
+        {`strong.simai { font-size: 1.175em }`}
+      </style>
       <div className="container">
-        <h1>Welcome to Simai!</h1>
+        <h1><strong className="simai">Si</strong>mple <strong className="simai">Ma</strong>rkdown prev<strong className="simai">i</strong>ewer</h1>
         <label>
-          Selected file: {selectedFile}
+          Markdown file: {selectedFile}
           <button onClick={(_) => { openFileSelectDialog() }}>select file</button>
         </label>
         <p>
-          <input type="file" onChange={applyCss} accept=".css" />
+          <label>Custom css file: <input type="file" onChange={applyCss} accept='.css' /></label>
         </p>
       </div>
       <div>
