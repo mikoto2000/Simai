@@ -1,14 +1,17 @@
 import "./App.css";
 
 import { useEffect, useState } from "react";
-
 import { emit, listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/api/dialog';
+
+import { Store } from "tauri-plugin-store-api";
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 function App() {
+
+  const CUSTOM_CSS_KEY = "custom.css";
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
@@ -16,11 +19,22 @@ function App() {
 
   const [content, setContent] = useState<string>("");
 
+  const [store, setStore] = useState<Store | null>(null);
+
   useEffect(() => {
-    listen('update_md', (event: any) => {
-      console.log(event);
-      setContent(event.payload);
-    });
+    (async () => {
+      const store = new Store(CUSTOM_CSS_KEY);
+      setStore(store);
+      const userCss = await store.get<string>(CUSTOM_CSS_KEY);
+      if (userCss) {
+        setCssContent(userCss);
+      }
+
+      listen('update_md', (event: any) => {
+        console.log(event);
+        setContent(event.payload);
+      });
+    })();
   }, []);
 
   async function openFileSelectDialog() {
@@ -53,6 +67,9 @@ function App() {
       reader.onload = function(e) {
         const content = e.target?.result?.toString();
         setCssContent(content);
+        if (store) {
+          store.set(CUSTOM_CSS_KEY, content);
+        }
       };
       reader.readAsText(file);
     }
