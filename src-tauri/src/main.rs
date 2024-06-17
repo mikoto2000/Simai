@@ -2,6 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
 use std::sync::{Arc, Mutex};
 use std::{path::Path, sync::mpsc};
 use std::{process, thread};
@@ -11,10 +13,9 @@ use notify::{EventKind, RecursiveMode, Watcher};
 use serde_json::value;
 use tauri::api::cli::ArgData;
 
-use tauri::{App, Manager};
+use tauri::{App, AppHandle, Manager};
 
-fn start_watch(file_path: &str, stop_rx: &mpsc::Receiver<()>) -> notify::Result<()> {
-
+fn start_watch(app_handle: &AppHandle, file_path: &str, stop_rx: &mpsc::Receiver<()>) -> notify::Result<()> {
     // チャンネルの停止依頼を空にする
     loop {
         if !stop_rx.try_recv().is_ok() {
@@ -25,21 +26,31 @@ fn start_watch(file_path: &str, stop_rx: &mpsc::Receiver<()>) -> notify::Result<
     let path = Path::new(file_path).as_ref();
     let (tx, rx) = mpsc::channel();
     let mut watcher = notify::recommended_watcher(move |event| {
-        tx.send(event).unwrap();
+        let _ = tx.send(event);
     })
     .unwrap();
     watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
 
     // 監視イベント受信処理処理スレッド
+    let app_handle = app_handle.clone();
     thread::spawn(move || {
         while let Ok(res) = rx.recv() {
             match res {
-                Ok(event) => match event.kind {
-                    EventKind::Modify(ModifyKind::Data(data)) => {
-                        println!("Change: {data:?}");
+                Ok(event) => {
+                    let path = event.paths[0].clone();
+                    match event.kind {
+                        EventKind::Modify(ModifyKind::Data(_)) => {
+                            println!("Change: {:?}", path);
+
+                            let mut file = File::open(path).unwrap();
+                            let mut file_contents = String::new();
+                            file.read_to_string(&mut file_contents).unwrap();
+
+                            app_handle.emit_all("update_md", file_contents).unwrap();
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                },
+                }
                 Err(error) => println!("Error: {error:?}"),
             }
         }
@@ -74,8 +85,10 @@ fn main() {
             // シミュレーション用の送受信チャンネル
             let (stop_tx, stop_rx) = std::sync::mpsc::channel();
 
+            let app_handle = app.handle();
             let ss = Arc::new(Mutex::new(move |file_path: &str| {
-                start_watch(file_path, &stop_rx).unwrap();
+                let app_handle = app_handle.clone();
+                start_watch(&app_handle, file_path, &stop_rx).unwrap();
             }));
 
             let stop_watch = {

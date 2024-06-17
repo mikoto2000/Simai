@@ -1,13 +1,22 @@
 import "./App.css";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { emit } from '@tauri-apps/api/event'
+import { emit, listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/api/dialog';
 
 function App() {
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+
+  const [content, setContent] = useState<string>("");
+
+  useEffect(() => {
+    listen('update_md', (event: any) => {
+      console.log(event);
+      setContent(event.payload);
+    });
+  }, []);
 
   async function openFileSelectDialog() {
     const selected = await open({
@@ -23,17 +32,23 @@ function App() {
       setSelectedFile(selected);
       emit('stop_watch', {});
       emit('start_watch', selected);
+
     }
   }
 
   return (
-    <div className="container">
-      <h1>Welcome to Simai!</h1>
-      <label>
-        Selected file: {selectedFile}
-        <button onClick={(_) => { openFileSelectDialog() }}>select file</button>
-      </label>
-    </div>
+    <>
+      <div className="container">
+        <h1>Welcome to Simai!</h1>
+        <label>
+          Selected file: {selectedFile}
+          <button onClick={(_) => { openFileSelectDialog() }}>select file</button>
+        </label>
+      </div>
+      <div>
+        {content}
+      </div>
+    </>
   );
 }
 
