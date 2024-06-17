@@ -5,6 +5,9 @@ import { useEffect, useState } from "react";
 import { emit, listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/api/dialog';
 
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 function App() {
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -36,6 +39,23 @@ function App() {
     }
   }
 
+  async function applyCss(event: any) {
+    console.log(event);
+
+    // ファイル取得
+    const file = event.target.files[0];
+
+    // ファイル読み込み
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const content = e.target?.result?.toString();
+        setCssContent(content);
+      };
+      reader.readAsText(file);
+    }
+  }
+
   return (
     <>
       <div className="container">
@@ -46,7 +66,7 @@ function App() {
         </label>
       </div>
       <div>
-        {content}
+        <ReactMarkdown remarkPlugins={[remarkGfm]} children={content} />
       </div>
     </>
   );
