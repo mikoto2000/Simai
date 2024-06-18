@@ -24,6 +24,9 @@
       "all": false,
       "dialog": {
         "open": true
+      },
+      "fs": {
+        "readFile": true
       }
     },
     "windows": [

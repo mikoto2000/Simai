@@ -9,6 +9,7 @@ import { Store } from "tauri-plugin-store-api";
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { fs } from "@tauri-apps/api";
 
 function App() {
 
@@ -25,16 +26,20 @@ function App() {
   useEffect(() => {
     (async () => {
       // ファイルのドロップを購読
-      appWindow.onFileDropEvent((event) => {
+      appWindow.onFileDropEvent(async (event) => {
         if (event.payload.type === 'hover') {
-          // TODO: ドロップできそうな表示に変更
-          console.log('User hovering', event.payload.paths);
+          console.log('User hovering', event);
         } else if (event.payload.type === 'drop') {
-          console.log('User dropped', event.payload.paths);
+          console.log('User dropped', event);
           const filePath = event.payload.paths[0];
-          setSelectedFile(filePath);
-          emit('stop_watch', {});
-          emit('start_watch', { path: filePath });
+          if (filePath.endsWith(".css")) {
+            const userCss = await fs.readTextFile(filePath);
+            setCssContent(userCss);
+          } else {
+            setSelectedFile(filePath);
+            emit('stop_watch', {});
+            emit('start_watch', { path: filePath });
+          }
         } else {
           console.log('File drop cancelled');
         }
