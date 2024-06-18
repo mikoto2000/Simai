@@ -46,12 +46,16 @@ fn start_watch(
             match res {
                 Ok(event) => {
                     let path = event.paths[0].clone();
+                    let path = &path.into_os_string().into_string().unwrap();
+                    let path = path.replace("\\", "/");
+                    let path = serde_json::from_str::<&str>(path.as_str()).unwrap();
+                    println!("{:?}", path);
                     match event.kind {
                         EventKind::Modify(ModifyKind::Data(_)) => {
                             println!("Change: {:?}", path);
 
                             let file_contents =
-                                get_file_content(&path.into_os_string().into_string().unwrap());
+                                get_file_content(path);
 
                             app_handle.emit_all("update_md", file_contents).unwrap();
                         }
@@ -120,6 +124,7 @@ fn main() {
                 println!("start_watch");
                 thread::spawn(move || {
                     let file_path = event.payload().unwrap().to_string();
+                    let file_path = file_path.replace("\\", "/");
                     let file_path = serde_json::from_str::<&str>(&file_path).unwrap();
 
                     ss.lock().unwrap()(file_path);

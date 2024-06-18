@@ -3,6 +3,7 @@ import "./App.css";
 import { useEffect, useState } from "react";
 import { emit, listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/api/dialog';
+import { appWindow } from '@tauri-apps/api/window';
 
 import { Store } from "tauri-plugin-store-api";
 
@@ -23,6 +24,23 @@ function App() {
 
   useEffect(() => {
     (async () => {
+      // ファイルのドロップを購読
+      appWindow.onFileDropEvent((event) => {
+        if (event.payload.type === 'hover') {
+          // TODO: ドロップできそうな表示に変更
+          console.log('User hovering', event.payload.paths);
+        } else if (event.payload.type === 'drop') {
+          console.log('User dropped', event.payload.paths);
+          const filePath = event.payload.paths[0];
+          setSelectedFile(filePath);
+          emit('stop_watch', {});
+          emit('start_watch', filePath);
+        } else {
+          console.log('File drop cancelled');
+        }
+      });
+
+      // カスタム CSS 読み込み
       const store = new Store(CUSTOM_CSS_KEY);
       setStore(store);
       const userCss = await store.get<string>(CUSTOM_CSS_KEY);
@@ -30,6 +48,7 @@ function App() {
         setCssContent(userCss);
       }
 
+      // ファイル更新イベントを購読
       listen('update_md', (event: any) => {
         console.log(event);
         setContent(event.payload);
