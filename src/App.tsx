@@ -34,7 +34,7 @@ function App() {
           const filePath = event.payload.paths[0];
           setSelectedFile(filePath);
           emit('stop_watch', {});
-          emit('start_watch', filePath);
+          emit('start_watch', { path: filePath });
         } else {
           console.log('File drop cancelled');
         }
@@ -69,7 +69,7 @@ function App() {
     if (typeof selected === 'string') {
       setSelectedFile(selected);
       emit('stop_watch', {});
-      emit('start_watch', selected);
+      emit('start_watch', { path: selected });
 
     }
   }

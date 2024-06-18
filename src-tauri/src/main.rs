@@ -10,10 +10,16 @@ use std::{process, thread};
 
 use notify::event::ModifyKind;
 use notify::{EventKind, RecursiveMode, Watcher};
+use serde::Deserialize;
 use serde_json::value;
 use tauri::api::cli::ArgData;
 
 use tauri::{App, AppHandle, Manager};
+
+#[derive(Deserialize)]
+struct TargetFile {
+    path: String,
+}
 
 fn start_watch(
     app_handle: &AppHandle,
@@ -47,15 +53,23 @@ fn start_watch(
                 Ok(event) => {
                     let path = event.paths[0].clone();
                     let path = &path.into_os_string().into_string().unwrap();
+                    let path = "{\"path\":\"".to_string() + path + "\"}";
+                    println!("raw path: {:?}", path);
                     let path = path.replace("\\", "/");
-                    let path = serde_json::from_str::<&str>(path.as_str()).unwrap();
-                    println!("{:?}", path);
+                    let target_file = serde_json::from_str::<TargetFile>(path.as_str()).unwrap();
+                    println!("deserialized path: {:?}", target_file.path);
+                    println!("event.kind: {:?}", event.kind);
                     match event.kind {
-                        EventKind::Modify(ModifyKind::Data(_)) => {
+                        // Linux だと、Modify の中に ModifyKind がある構造
+                        // Windows だと、 Modify の中に Any がある構造
+                        // 両方で 1 度だけ発火させるために ModifyKind
+                        // がある場合には何もしないようにしている。
+                        EventKind::Modify(ModifyKind::Data(_)) => {}
+                        EventKind::Modify(_) => {
                             println!("Change: {:?}", path);
 
-                            let file_contents =
-                                get_file_content(path);
+                            let file_contents = get_file_content(&target_file.path);
+                            println!("file_contents: {:?}", file_contents);
 
                             app_handle.emit_all("update_md", file_contents).unwrap();
                         }
@@ -125,9 +139,9 @@ fn main() {
                 thread::spawn(move || {
                     let file_path = event.payload().unwrap().to_string();
                     let file_path = file_path.replace("\\", "/");
-                    let file_path = serde_json::from_str::<&str>(&file_path).unwrap();
+                    let target_file = serde_json::from_str::<TargetFile>(&file_path).unwrap();
 
-                    ss.lock().unwrap()(file_path);
+                    ss.lock().unwrap()(&target_file.path);
                 });
             });
 
