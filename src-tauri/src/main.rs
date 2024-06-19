@@ -37,7 +37,7 @@ fn start_watch(
     let path = Path::new(file_path).as_ref();
     let (tx, rx) = mpsc::channel();
 
-    let watcher: Box<dyn Watcher> = if str::starts_with(file_path, "\\\\") {
+    let _watcher: Box<dyn Watcher> = if str::starts_with(file_path, "\\\\") {
         println!("polling!");
         let config = Config::default().with_poll_interval(Duration::from_secs(1));
         let mut poll_watcher = PollWatcher::new(tx, config)?;
