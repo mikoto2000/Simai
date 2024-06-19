@@ -5,11 +5,12 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::{path::Path, sync::mpsc};
 use std::{process, thread};
 
 use notify::event::ModifyKind;
-use notify::{EventKind, RecursiveMode, Watcher};
+use notify::{Config, EventKind, PollWatcher, RecursiveMode, Watcher};
 use serde::Deserialize;
 use serde_json::value;
 use tauri::api::cli::ArgData;
@@ -35,11 +36,21 @@ fn start_watch(
 
     let path = Path::new(file_path).as_ref();
     let (tx, rx) = mpsc::channel();
-    let mut watcher = notify::recommended_watcher(move |event| {
-        let _ = tx.send(event);
-    })
-    .unwrap();
-    watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
+
+    let watcher: Box<dyn Watcher> = if str::starts_with(file_path, "\\\\") {
+        println!("polling!");
+        let config = Config::default().with_poll_interval(Duration::from_secs(1));
+        let mut poll_watcher = PollWatcher::new(tx, config)?;
+        poll_watcher.watch(path, RecursiveMode::NonRecursive)?;
+        Box::new(poll_watcher)
+    } else {
+        println!("recommended!");
+        let mut recommended_watcher = notify::recommended_watcher(move |event| {
+            let _ = tx.send(event);
+        })?;
+        recommended_watcher.watch(path, RecursiveMode::NonRecursive)?;
+        Box::new(recommended_watcher)
+    };
 
     // 初回の描画
     let file_contents = get_file_content(file_path);
@@ -52,10 +63,14 @@ fn start_watch(
             match res {
                 Ok(event) => {
                     let path = event.paths[0].clone();
-                    let path = &path.into_os_string().into_string().unwrap();
-                    let path = "{\"path\":\"".to_string() + path + "\"}";
+                    let path = path.into_os_string().into_string().unwrap();
+                    // フロントエンドでは
+                    // JSON -> オブジェクト -> 文字列 と解釈していくので 2 回エスケープされる
+                    // 2 回のエスケープで想定通りとなるように、ここでバックスラッシュを増やす
+                    // TODO 他のエスケープ記号はどうしよう...
+                    let path_string = path.replace("\\", "\\\\");
+                    let path = "{\"path\":\"".to_string() + &path_string + "\"}";
                     println!("raw path: {:?}", path);
-                    let path = path.replace("\\", "/");
                     let target_file = serde_json::from_str::<TargetFile>(path.as_str()).unwrap();
                     println!("deserialized path: {:?}", target_file.path);
                     println!("event.kind: {:?}", event.kind);
@@ -138,7 +153,6 @@ fn main() {
                 println!("start_watch");
                 thread::spawn(move || {
                     let file_path = event.payload().unwrap().to_string();
-                    let file_path = file_path.replace("\\", "/");
                     let target_file = serde_json::from_str::<TargetFile>(&file_path).unwrap();
 
                     ss.lock().unwrap()(&target_file.path);
@@ -207,6 +221,7 @@ fn get_value(args: &HashMap<String, ArgData>, key: &str) -> value::Value {
 }
 
 fn get_file_content(path: &str) -> String {
+    println!("{:?}", path);
     let mut file = File::open(path).unwrap();
     let mut file_contents = String::new();
     file.read_to_string(&mut file_contents).unwrap();
