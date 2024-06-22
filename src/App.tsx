@@ -10,8 +10,6 @@ import remarkGfm from 'remark-gfm';
 
 function App() {
 
-  const CUSTOM_CSS_KEY = "custom.css";
-
   const [selectedMdFile, setSelectedMdFile] = useState<string | null>(null);
   const [mdContent, setMdContent] = useState<string>("");
 
@@ -26,16 +24,17 @@ function App() {
           console.log('User hovering', event);
         } else if (event.payload.type === 'drop') {
           console.log('User dropped', event);
-          const filePath = event.payload.paths[0];
-          if (filePath.endsWith(".css")) {
-            setSelectedCssFile(filePath);
-            emit('stop_watch_md', {});
-            emit('start_watch_md', { path: filePath });
-          } else {
-            setSelectedMdFile(filePath);
-            emit('stop_watch_css', {});
-            emit('start_watch_css', { path: filePath });
-          }
+          event.payload.paths.forEach((filePath) => {
+            if (filePath.endsWith(".css")) {
+              setSelectedMdFile(filePath);
+              emit('stop_watch_css', {});
+              emit('start_watch_css', { path: filePath });
+            } else {
+              setSelectedCssFile(filePath);
+              emit('stop_watch_md', {});
+              emit('start_watch_md', { path: filePath });
+            }
+          });
         } else {
           console.log('File drop cancelled');
         }
