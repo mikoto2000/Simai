@@ -92,14 +92,7 @@ function App() {
 
   return (
     <>
-      <style>
-        {cssContent ? cssContent : ""}
-      </style>
-      <style>
-        {`strong.simai { font-size: 1.175em }`}
-      </style>
       <div className="container">
-        <h1><strong className="simai">Si</strong>mple <strong className="simai">Ma</strong>rkdown prev<strong className="simai">i</strong>ewer</h1>
         <label>
           Markdown file: {selectedMdFile}
           <button onClick={(_) => { openMdFileSelectDialog() }}>select md file</button>
@@ -112,6 +105,9 @@ function App() {
       <div>
         <ReactMarkdown remarkPlugins={[remarkGfm]} children={mdContent} />
       </div>
+      <style>
+        {cssContent ? cssContent : ""}
+      </style>
     </>
   );
 }
