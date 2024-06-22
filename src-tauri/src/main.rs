@@ -123,47 +123,39 @@ fn main() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             let file_path = parse_args(&app).unwrap();
+            let app_handle = Arc::new(Mutex::new(app.handle()));
 
             // シミュレーション用の送受信チャンネル
             let (stop_tx, stop_rx) = std::sync::mpsc::channel();
-
-            let app_handle = app.handle();
-            let ss = Arc::new(Mutex::new(move |file_path: &str| {
-                let app_handle = app_handle.clone();
-                start_watch(&app_handle, file_path, &stop_rx).unwrap();
-            }));
-
-            let stop_watch = {
-                move || {
-                    stop_tx.send(()).unwrap();
-                    println!("stoped.");
-                }
-            };
+            let stop_rx = Arc::new(Mutex::new(stop_rx));
 
             if file_path != "" {
-                let ss = Arc::clone(&ss);
+                let app_handle = Arc::clone(&app_handle);
+                let stop_rx = Arc::clone(&stop_rx);
                 thread::spawn(move || {
-                    ss.lock().unwrap()(file_path.as_str());
+                    let app_handle_lock = app_handle.lock().unwrap();
+                    let stop_rx_lock = stop_rx.lock().unwrap();
+                    start_watch(&app_handle_lock, &file_path, &stop_rx_lock).unwrap();
                 });
             };
 
             // グローバルリスナーの設定
             app.listen_global("start_watch", move |event| {
-                let ss = Arc::clone(&ss);
+                let app_handle = Arc::clone(&app_handle);
+                let stop_rx = Arc::clone(&stop_rx);
                 println!("start_watch");
                 thread::spawn(move || {
+                    let app_handle_lock = app_handle.lock().unwrap();
+                    let stop_rx_lock = stop_rx.lock().unwrap();
                     let file_path = event.payload().unwrap().to_string();
                     let target_file = serde_json::from_str::<TargetFile>(&file_path).unwrap();
-
-                    ss.lock().unwrap()(&target_file.path);
+                    start_watch(&app_handle_lock, &target_file.path, &stop_rx_lock).unwrap();
                 });
             });
 
-            app.listen_global("stop_watch", {
-                println!("stop_watch");
-                move |_| {
-                    stop_watch();
-                }
+            app.listen_global("stop_watch", move |_| {
+                stop_tx.send(()).unwrap();
+                println!("stoped.");
             });
 
             Ok(())
