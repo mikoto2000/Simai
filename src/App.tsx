@@ -19,25 +19,26 @@ function App() {
   const [selectedCssFile, setSelectedCssFile] = useState<string | null>(null);
   const [cssContent, setCssContent] = useState<string | undefined>(undefined);
 
-  const [store, setStore] = useState<Store | null>(null);
+  const [_, setStore] = useState<Store | null>(null);
 
   useEffect(() => {
     (async () => {
       // ファイルのドロップを購読
-      appWindow.onFileDropEvent(async (event) => {
+      const unlisten = await appWindow.onFileDropEvent(async (event) => {
         if (event.payload.type === 'hover') {
           console.log('User hovering', event);
         } else if (event.payload.type === 'drop') {
           console.log('User dropped', event);
-          event.payload.paths.forEach((filePath) => {
+          event.payload.paths.forEach(async (filePath) => {
+            console.log(filePath);
             if (filePath.endsWith(".css")) {
-              setSelectedMdFile(filePath);
-              emit('stop_watch_css', {});
-              emit('start_watch_css', { path: filePath });
+              setSelectedCssFile((_) => filePath);
+              await emit('stop_watch_css', {});
+              await emit('start_watch_css', { path: filePath });
             } else {
-              setSelectedCssFile(filePath);
-              emit('stop_watch_md', {});
-              emit('start_watch_md', { path: filePath });
+              setSelectedMdFile((_) => filePath);
+              await emit('stop_watch_md', {});
+              await emit('start_watch_md', { path: filePath });
             }
           });
         } else {
@@ -46,27 +47,33 @@ function App() {
       });
 
       // 前回の CSS の内容を読み込み
-      const s = new Store(CUSTOM_CSS_KEY);
-      const userCss = await s.get<any>(CUSTOM_CSS_KEY);
+      const store = new Store(CUSTOM_CSS_KEY);
+      const userCss = await store.get<any>(CUSTOM_CSS_KEY);
       if (userCss) {
         console.log(userCss)
-        setSelectedCssFile(userCss.content.path + "(Previous cache)");
-        setCssContent(userCss.content.content);
+        setSelectedCssFile((_) =>
+          userCss?.content?.path
+            ?
+            userCss?.content?.path + "(Previous cache)"
+            :
+            ""
+        );
+        setCssContent((_) => userCss?.content?.content ?? "");
       }
       setStore((_) => store);
 
       // md ファイル更新イベントを購読
       listen('update_md', (event: any) => {
         console.log(event);
-        setSelectedMdFile(event.payload.path);
-        setMdContent(event.payload.content);
+        setSelectedMdFile((_) => event.payload.path);
+        setMdContent((_) => event.payload.content);
       });
 
       // css ファイル更新イベントを購読
       listen('update_css', (event: any) => {
         console.log(event);
-        setSelectedCssFile(event.payload.path);
-        setCssContent(event.payload.content);
+        setSelectedCssFile((_) => event.payload.path);
+        setCssContent((_) => event.payload.content);
         if (store) {
           store.set(CUSTOM_CSS_KEY,
             {
@@ -76,6 +83,9 @@ function App() {
           );
         }
       });
+      return () => {
+        unlisten();
+      }
     })();
   }, []);
 
@@ -90,9 +100,10 @@ function App() {
     });
 
     if (typeof selected === 'string') {
-      setSelectedMdFile(selected);
-      emit('stop_watch_md', {});
-      emit('start_watch_md', { path: selected });
+      console.log(selected);
+      setSelectedMdFile((_) => selected);
+      await emit('stop_watch_md', {});
+      await emit('start_watch_md', { path: selected });
 
     }
   }
@@ -108,9 +119,10 @@ function App() {
     });
 
     if (typeof selected === 'string') {
+      console.log(selected);
       setSelectedCssFile((_) => selected);
-      emit('stop_watch_css', {});
-      emit('start_watch_css', { path: selected });
+      await emit('stop_watch_css', {});
+      await emit('start_watch_css', { path: selected });
 
     }
   }

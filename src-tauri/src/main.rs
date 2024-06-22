@@ -72,6 +72,7 @@ fn start_watch(
     // 監視イベント受信処理処理スレッド
     {
         let event_name = event_name.to_string();
+        let file_path = file_path.to_string().clone();
         thread::spawn(move || {
             let event_name = event_name.clone();
             while let Ok(res) = rx.recv() {
@@ -103,8 +104,12 @@ fn start_watch(
                                 println!("file_contents: {:?}", file_contents);
 
                                 let app_handle_lock = app_handle.lock().unwrap();
+                                let emit_object = UpdateFile {
+                                    path: file_path.to_string(),
+                                    content: file_contents.to_string(),
+                                };
                                 app_handle_lock
-                                    .emit_all(&event_name, file_contents)
+                                    .emit_all(&event_name, emit_object)
                                     .unwrap();
                                 drop(app_handle_lock);
                             }
