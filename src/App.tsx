@@ -5,23 +5,18 @@ import { emit, listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/api/dialog';
 import { appWindow } from '@tauri-apps/api/window';
 
-import { Store } from "tauri-plugin-store-api";
-
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fs } from "@tauri-apps/api";
 
 function App() {
 
   const CUSTOM_CSS_KEY = "custom.css";
 
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedMdFile, setSelectedMdFile] = useState<string | null>(null);
+  const [mdContent, setMdContent] = useState<string>("");
 
+  const [selectedCssFile, setSelectedCssFile] = useState<string | null>(null);
   const [cssContent, setCssContent] = useState<string | undefined>(undefined);
-
-  const [content, setContent] = useState<string>("");
-
-  const [store, setStore] = useState<Store | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -33,35 +28,34 @@ function App() {
           console.log('User dropped', event);
           const filePath = event.payload.paths[0];
           if (filePath.endsWith(".css")) {
-            const userCss = await fs.readTextFile(filePath);
-            setCssContent(userCss);
+            setSelectedCssFile(filePath);
+            emit('stop_watch_md', {});
+            emit('start_watch_md', { path: filePath });
           } else {
-            setSelectedFile(filePath);
-            emit('stop_watch', {});
-            emit('start_watch', { path: filePath });
+            setSelectedMdFile(filePath);
+            emit('stop_watch_css', {});
+            emit('start_watch_css', { path: filePath });
           }
         } else {
           console.log('File drop cancelled');
         }
       });
 
-      // カスタム CSS 読み込み
-      const store = new Store(CUSTOM_CSS_KEY);
-      setStore(store);
-      const userCss = await store.get<string>(CUSTOM_CSS_KEY);
-      if (userCss) {
-        setCssContent(userCss);
-      }
-
-      // ファイル更新イベントを購読
+      // md ファイル更新イベントを購読
       listen('update_md', (event: any) => {
         console.log(event);
-        setContent(event.payload);
+        setMdContent(event.payload);
+      });
+
+      // css ファイル更新イベントを購読
+      listen('update_css', (event: any) => {
+        console.log(event);
+        setCssContent(event.payload);
       });
     })();
   }, []);
 
-  async function openFileSelectDialog() {
+  async function openMdFileSelectDialog() {
     const selected = await open({
       title: 'Select markdown file.',
       multiple: false,
@@ -72,30 +66,28 @@ function App() {
     });
 
     if (typeof selected === 'string') {
-      setSelectedFile(selected);
-      emit('stop_watch', {});
-      emit('start_watch', { path: selected });
+      setSelectedMdFile(selected);
+      emit('stop_watch_md', {});
+      emit('start_watch_md', { path: selected });
 
     }
   }
 
-  async function applyCss(event: any) {
-    console.log(event);
+  async function openCssFileSelectDialog() {
+    const selected = await open({
+      title: 'Select markdown file.',
+      multiple: false,
+      filters: [{
+        name: 'css',
+        extensions: ['css']
+      }]
+    });
 
-    // ファイル取得
-    const file = event.target.files[0];
+    if (typeof selected === 'string') {
+      setSelectedCssFile(selected);
+      emit('stop_watch_css', {});
+      emit('start_watch_css', { path: selected });
 
-    // ファイル読み込み
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const content = e.target?.result?.toString();
-        setCssContent(content);
-        if (store) {
-          store.set(CUSTOM_CSS_KEY, content);
-        }
-      };
-      reader.readAsText(file);
     }
   }
 
@@ -110,15 +102,16 @@ function App() {
       <div className="container">
         <h1><strong className="simai">Si</strong>mple <strong className="simai">Ma</strong>rkdown prev<strong className="simai">i</strong>ewer</h1>
         <label>
-          Markdown file: {selectedFile}
-          <button onClick={(_) => { openFileSelectDialog() }}>select file</button>
+          Markdown file: {selectedMdFile}
+          <button onClick={(_) => { openMdFileSelectDialog() }}>select md file</button>
         </label>
-        <p>
-          <label>Custom css file: <input type="file" onChange={applyCss} accept='.css' /></label>
-        </p>
+        <label>
+          Css file: {selectedCssFile}
+          <button onClick={(_) => { openCssFileSelectDialog() }}>select css file</button>
+        </label>
       </div>
       <div>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} children={content} />
+        <ReactMarkdown remarkPlugins={[remarkGfm]} children={mdContent} />
       </div>
     </>
   );

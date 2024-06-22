@@ -23,9 +23,10 @@ struct TargetFile {
 }
 
 fn start_watch(
-    app_handle: &AppHandle,
+    app_handle: Arc<Mutex<AppHandle>>,
     file_path: &str,
     stop_rx: &mpsc::Receiver<()>,
+    event_name: &str,
 ) -> notify::Result<()> {
     // チャンネルの停止依頼を空にする
     loop {
@@ -54,47 +55,57 @@ fn start_watch(
 
     // 初回の描画
     let file_contents = get_file_content(file_path);
-    app_handle.emit_all("update_md", file_contents).unwrap();
+    let app_handle_lock = app_handle.lock().unwrap();
+    app_handle_lock.emit_all(event_name, file_contents).unwrap();
+    drop(app_handle_lock);
 
     // 監視イベント受信処理処理スレッド
-    let app_handle = app_handle.clone();
-    thread::spawn(move || {
-        while let Ok(res) = rx.recv() {
-            match res {
-                Ok(event) => {
-                    let path = event.paths[0].clone();
-                    let path = path.into_os_string().into_string().unwrap();
-                    // フロントエンドでは
-                    // JSON -> オブジェクト -> 文字列 と解釈していくので 2 回エスケープされる
-                    // 2 回のエスケープで想定通りとなるように、ここでバックスラッシュを増やす
-                    // TODO 他のエスケープ記号はどうしよう...
-                    let path_string = path.replace("\\", "\\\\");
-                    let path = "{\"path\":\"".to_string() + &path_string + "\"}";
-                    println!("raw path: {:?}", path);
-                    let target_file = serde_json::from_str::<TargetFile>(path.as_str()).unwrap();
-                    println!("deserialized path: {:?}", target_file.path);
-                    println!("event.kind: {:?}", event.kind);
-                    match event.kind {
-                        // Linux だと、Modify の中に ModifyKind がある構造
-                        // Windows だと、 Modify の中に Any がある構造
-                        // 両方で 1 度だけ発火させるために ModifyKind
-                        // がある場合には何もしないようにしている。
-                        EventKind::Modify(ModifyKind::Data(_)) => {}
-                        EventKind::Modify(_) => {
-                            println!("Change: {:?}", path);
+    {
+        let event_name = event_name.to_string();
+        thread::spawn(move || {
+            let event_name = event_name.clone();
+            while let Ok(res) = rx.recv() {
+                match res {
+                    Ok(event) => {
+                        let path = event.paths[0].clone();
+                        let path = path.into_os_string().into_string().unwrap();
+                        // フロントエンドでは
+                        // JSON -> オブジェクト -> 文字列 と解釈していくので 2 回エスケープされる
+                        // 2 回のエスケープで想定通りとなるように、ここでバックスラッシュを増やす
+                        // TODO 他のエスケープ記号はどうしよう...
+                        let path_string = path.replace("\\", "\\\\");
+                        let path = "{\"path\":\"".to_string() + &path_string + "\"}";
+                        println!("raw path: {:?}", path);
+                        let target_file =
+                            serde_json::from_str::<TargetFile>(path.as_str()).unwrap();
+                        println!("deserialized path: {:?}", target_file.path);
+                        println!("event.kind: {:?}", event.kind);
+                        match event.kind {
+                            // Linux だと、Modify の中に ModifyKind がある構造
+                            // Windows だと、 Modify の中に Any がある構造
+                            // 両方で 1 度だけ発火させるために ModifyKind
+                            // がある場合には何もしないようにしている。
+                            EventKind::Modify(ModifyKind::Data(_)) => {}
+                            EventKind::Modify(_) => {
+                                println!("Change: {:?}", path);
 
-                            let file_contents = get_file_content(&target_file.path);
-                            println!("file_contents: {:?}", file_contents);
+                                let file_contents = get_file_content(&target_file.path);
+                                println!("file_contents: {:?}", file_contents);
 
-                            app_handle.emit_all("update_md", file_contents).unwrap();
+                                let app_handle_lock = app_handle.lock().unwrap();
+                                app_handle_lock
+                                    .emit_all(&event_name, file_contents)
+                                    .unwrap();
+                                drop(app_handle_lock);
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
+                    Err(error) => println!("Error: {error:?}"),
                 }
-                Err(error) => println!("Error: {error:?}"),
             }
-        }
-    });
+        });
+    }
 
     // ファイル監視終了イベント受信ループ
     // このスレッドが終了しないようにループを作り、
@@ -129,34 +140,70 @@ fn main() {
             let (stop_tx, stop_rx) = std::sync::mpsc::channel();
             let stop_rx = Arc::new(Mutex::new(stop_rx));
 
-            if file_path != "" {
+            {
                 let app_handle = Arc::clone(&app_handle);
                 let stop_rx = Arc::clone(&stop_rx);
                 thread::spawn(move || {
-                    let app_handle_lock = app_handle.lock().unwrap();
-                    let stop_rx_lock = stop_rx.lock().unwrap();
-                    start_watch(&app_handle_lock, &file_path, &stop_rx_lock).unwrap();
+                    if file_path != "" {
+                        let app_handle = Arc::clone(&app_handle);
+                        let stop_rx = Arc::clone(&stop_rx);
+                        thread::spawn(move || {
+                            let stop_rx_lock = stop_rx.lock().unwrap();
+                            start_watch(app_handle, &file_path, &stop_rx_lock, "update_md")
+                                .unwrap();
+                        });
+                    };
                 });
-            };
+            }
 
             // グローバルリスナーの設定
-            app.listen_global("start_watch", move |event| {
+            {
                 let app_handle = Arc::clone(&app_handle);
-                let stop_rx = Arc::clone(&stop_rx);
-                println!("start_watch");
-                thread::spawn(move || {
-                    let app_handle_lock = app_handle.lock().unwrap();
-                    let stop_rx_lock = stop_rx.lock().unwrap();
-                    let file_path = event.payload().unwrap().to_string();
-                    let target_file = serde_json::from_str::<TargetFile>(&file_path).unwrap();
-                    start_watch(&app_handle_lock, &target_file.path, &stop_rx_lock).unwrap();
+                app.listen_global("start_watch_md", move |event| {
+                    let app_handle = Arc::clone(&app_handle);
+                    let stop_rx = Arc::clone(&stop_rx);
+                    println!("start_watch_md");
+                    thread::spawn(move || {
+                        let stop_rx_lock = stop_rx.lock().unwrap();
+                        let file_path = event.payload().unwrap().to_string();
+                        let target_file = serde_json::from_str::<TargetFile>(&file_path).unwrap();
+                        start_watch(app_handle, &target_file.path, &stop_rx_lock, "update_md")
+                            .unwrap();
+                    });
                 });
-            });
+            }
 
-            app.listen_global("stop_watch", move |_| {
+            app.listen_global("stop_watch_md", move |_| {
                 stop_tx.send(()).unwrap();
                 println!("stoped.");
             });
+
+            let (stop_tx_css, stop_rx_css) = std::sync::mpsc::channel();
+            {
+                let app_handle = Arc::clone(&app_handle);
+                let stop_rx_css = Arc::new(Mutex::new(stop_rx_css));
+                app.listen_global("start_watch_css", move |event| {
+                    let app_handle = Arc::clone(&app_handle);
+                    let stop_rx_css = Arc::clone(&stop_rx_css);
+                    thread::spawn(move || {
+                        let stop_rx_lock = stop_rx_css.lock().unwrap();
+                        let file_path = event.payload().unwrap().to_string();
+                        let target_file = serde_json::from_str::<TargetFile>(&file_path).unwrap();
+                        start_watch(
+                            app_handle,
+                            &target_file.path,
+                            &stop_rx_lock,
+                            "update_css",
+                        )
+                        .unwrap();
+                    });
+                });
+
+                app.listen_global("stop_watch_css", move |_| {
+                    stop_tx_css.send(()).unwrap();
+                    println!("stoped.");
+                });
+            }
 
             Ok(())
         })
