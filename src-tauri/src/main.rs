@@ -11,7 +11,7 @@ use std::{process, thread};
 
 use notify::event::ModifyKind;
 use notify::{Config, EventKind, PollWatcher, RecursiveMode, Watcher};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::value;
 use tauri::api::cli::ArgData;
 
@@ -20,6 +20,12 @@ use tauri::{App, AppHandle, Manager};
 #[derive(Deserialize)]
 struct TargetFile {
     path: String,
+}
+
+#[derive(Clone, Serialize)]
+struct UpdateFile {
+    path: String,
+    content: String,
 }
 
 fn start_watch(
@@ -56,7 +62,11 @@ fn start_watch(
     // 初回の描画
     let file_contents = get_file_content(file_path);
     let app_handle_lock = app_handle.lock().unwrap();
-    app_handle_lock.emit_all(event_name, file_contents).unwrap();
+    let emit_object = UpdateFile {
+        path: file_path.to_string(),
+        content: file_contents.to_string(),
+    };
+    app_handle_lock.emit_all(event_name, emit_object).unwrap();
     drop(app_handle_lock);
 
     // 監視イベント受信処理処理スレッド
@@ -189,13 +199,8 @@ fn main() {
                         let stop_rx_lock = stop_rx_css.lock().unwrap();
                         let file_path = event.payload().unwrap().to_string();
                         let target_file = serde_json::from_str::<TargetFile>(&file_path).unwrap();
-                        start_watch(
-                            app_handle,
-                            &target_file.path,
-                            &stop_rx_lock,
-                            "update_css",
-                        )
-                        .unwrap();
+                        start_watch(app_handle, &target_file.path, &stop_rx_lock, "update_css")
+                            .unwrap();
                     });
                 });
 

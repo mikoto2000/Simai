@@ -1,20 +1,25 @@
 import "./App.css";
 
-import { useEffect, useState } from "react";
-import { emit, listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/api/dialog';
+import { emit, listen } from '@tauri-apps/api/event';
 import { appWindow } from '@tauri-apps/api/window';
+import { useEffect, useState } from "react";
+import { Store } from "tauri-plugin-store-api";
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 function App() {
 
+  const CUSTOM_CSS_KEY = "custom.css";
+
   const [selectedMdFile, setSelectedMdFile] = useState<string | null>(null);
   const [mdContent, setMdContent] = useState<string>("");
 
   const [selectedCssFile, setSelectedCssFile] = useState<string | null>(null);
   const [cssContent, setCssContent] = useState<string | undefined>(undefined);
+
+  const [store, setStore] = useState<Store | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -40,16 +45,36 @@ function App() {
         }
       });
 
+      // 前回の CSS の内容を読み込み
+      const s = new Store(CUSTOM_CSS_KEY);
+      const userCss = await s.get<any>(CUSTOM_CSS_KEY);
+      if (userCss) {
+        console.log(userCss)
+        setSelectedCssFile(userCss.content.path + "(Previous cache)");
+        setCssContent(userCss.content.content);
+      }
+      setStore((_) => store);
+
       // md ファイル更新イベントを購読
       listen('update_md', (event: any) => {
         console.log(event);
-        setMdContent(event.payload);
+        setSelectedMdFile(event.payload.path);
+        setMdContent(event.payload.content);
       });
 
       // css ファイル更新イベントを購読
       listen('update_css', (event: any) => {
         console.log(event);
-        setCssContent(event.payload);
+        setSelectedCssFile(event.payload.path);
+        setCssContent(event.payload.content);
+        if (store) {
+          store.set(CUSTOM_CSS_KEY,
+            {
+              path: selectedCssFile,
+              content: event.payload
+            }
+          );
+        }
       });
     })();
   }, []);
@@ -83,7 +108,7 @@ function App() {
     });
 
     if (typeof selected === 'string') {
-      setSelectedCssFile(selected);
+      setSelectedCssFile((_) => selected);
       emit('stop_watch_css', {});
       emit('start_watch_css', { path: selected });
 
