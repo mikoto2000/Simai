@@ -8,6 +8,7 @@ import { Store } from "tauri-plugin-store-api";
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 
 function App() {
 
@@ -140,7 +141,7 @@ function App() {
         </label>
       </div>
       <div>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} children={mdContent} />
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} children={mdContent} />
       </div>
       <style>
         {cssContent ? cssContent : ""}
