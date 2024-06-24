@@ -159,22 +159,27 @@ function App() {
         </label>
       </div>
       <div>
-        <table>
-          <thead>
-            <tr>
-              {Object.keys(metadata).map((key) => (
-                <th key={key}>{key}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              {Object.values(metadata).map((value, index) => (
-                <td key={index}>{value as any}</td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
+        {
+          metadata ?
+          <table>
+            <thead>
+              <tr>
+                {Object.keys(metadata).map((key) => (
+                  <th key={key}>{key}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {Object.values(metadata).map((value, index) => (
+                  <td key={index}>{value as any}</td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+          :
+          <></>
+        }
         <ReactMarkdown
           remarkPlugins={
             [
