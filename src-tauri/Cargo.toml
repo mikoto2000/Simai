@@ -1,7 +1,7 @@
 [package]
 name = "Simai"
-version = "0.1.0"
-description = "Simai is Simple SVG previewer."
+version = "0.2.0"
+description = "Simai is Simple Markdown previewer."
 authors = ["mikoto2000@gmail.com"]
 edition = "2021"
 
