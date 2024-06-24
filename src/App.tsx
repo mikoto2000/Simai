@@ -10,12 +10,17 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import remarkToc from 'remark-toc'
+import matter from 'gray-matter';
+
+import { Buffer } from "buffer";
+window.Buffer = Buffer;
 
 function App() {
 
   const CUSTOM_CSS_KEY = "custom.css";
 
   const [selectedMdFile, setSelectedMdFile] = useState<string | null>(null);
+  const [metadata, setMetadata] = useState<any>(undefined);
   const [mdContent, setMdContent] = useState<string>("");
 
   const [selectedCssFile, setSelectedCssFile] = useState<string | null>(null);
@@ -67,8 +72,10 @@ function App() {
       // md ファイル更新イベントを購読
       listen('update_md', (event: any) => {
         console.log(event);
+        const { data, content } = matter(event.payload.content);
         setSelectedMdFile((_) => event.payload.path);
-        setMdContent((_) => event.payload.content);
+        setMetadata(data);
+        setMdContent((_) => content);
       });
 
       // css ファイル更新イベントを購読
@@ -134,15 +141,45 @@ function App() {
       <div className="container">
         <label>
           Markdown file: {selectedMdFile}
-          <button onClick={(_) => { openMdFileSelectDialog() }}>select md file</button>
+          <button onClick={(_) => { openMdFileSelectDialog() }}>
+            select md file
+          </button>
         </label>
         <label>
           Css file: {selectedCssFile}
-          <button onClick={(_) => { openCssFileSelectDialog() }}>select css file</button>
+          <button onClick={(_) => { openCssFileSelectDialog() }}>
+            select css file
+          </button>
         </label>
       </div>
       <div>
-        <ReactMarkdown remarkPlugins={[remarkGfm, [remarkToc, { heading: '目次' }]]} rehypePlugins={[rehypeRaw]} children={"# 目次\n\n" + mdContent} />
+        <table>
+          <thead>
+            <tr>
+              {Object.keys(metadata).map((key) => (
+                <th key={key}>{key}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              {Object.values(metadata).map((value, index) => (
+                <td key={index}>{value as any}</td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+        <ReactMarkdown
+          remarkPlugins={
+            [
+              remarkGfm,
+              [remarkToc, { heading: '目次' }]
+            ]
+          }
+          rehypePlugins={[rehypeRaw]}
+          children={
+            "# 目次\n\n" + mdContent
+          } />
       </div>
       <style>
         {cssContent ? cssContent : ""}
