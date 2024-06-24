@@ -12,6 +12,12 @@ import rehypeRaw from 'rehype-raw';
 import remarkToc from 'remark-toc'
 import matter from 'gray-matter';
 
+declare global {
+  interface Window {
+    Buffer: typeof import('buffer').Buffer;
+  }
+}
+
 import { Buffer } from "buffer";
 window.Buffer = Buffer;
 
