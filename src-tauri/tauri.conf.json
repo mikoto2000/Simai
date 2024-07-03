@@ -22,6 +22,9 @@
     },
     "allowlist": {
       "all": false,
+      "clipboard": {
+        "writeText": true
+      },
       "dialog": {
         "open": true
       }

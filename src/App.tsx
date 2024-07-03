@@ -19,6 +19,7 @@ declare global {
 }
 
 import { Buffer } from "buffer";
+import { writeText } from "@tauri-apps/api/clipboard";
 window.Buffer = Buffer;
 
 function App() {
@@ -31,6 +32,7 @@ function App() {
 
   const [selectedCssFile, setSelectedCssFile] = useState<string | null>(null);
   const [cssContent, setCssContent] = useState<string | undefined>(undefined);
+  const [isCache, setIsCache] = useState<boolean>(true);
 
   const [_, setStore] = useState<Store | null>(null);
 
@@ -46,6 +48,7 @@ function App() {
             console.log(filePath);
             if (filePath.endsWith(".css")) {
               setSelectedCssFile((_) => filePath);
+              setIsCache(false);
               await emit('stop_watch_css', {});
               await emit('start_watch_css', { path: filePath });
             } else {
@@ -67,7 +70,7 @@ function App() {
         setSelectedCssFile((_) =>
           userCss?.content?.path
             ?
-            userCss?.content?.path + "(Previous cache)"
+            userCss?.content?.path
             :
             ""
         );
@@ -89,6 +92,7 @@ function App() {
         console.log(event);
         setSelectedCssFile((_) => event.payload.path);
         setCssContent((_) => event.payload.content);
+        setIsCache(false);
         if (store) {
           store.set(CUSTOM_CSS_KEY,
             {
@@ -136,6 +140,7 @@ function App() {
     if (typeof selected === 'string') {
       console.log(selected);
       setSelectedCssFile((_) => selected);
+      setIsCache(false);
       await emit('stop_watch_css', {});
       await emit('start_watch_css', { path: selected });
 
@@ -145,40 +150,65 @@ function App() {
   return (
     <>
       <div className="container">
-        <label>
-          Markdown file: {selectedMdFile}
-          <button onClick={(_) => { openMdFileSelectDialog() }}>
-            select md file
+        <div>
+          <label>
+            Markdown file: {selectedMdFile}
+            <button onClick={(_) => { openMdFileSelectDialog() }}>
+              select md file
+            </button>
+          </label>
+          <button onClick={(_) => {
+            if (selectedMdFile) {
+              writeText(selectedMdFile)
+            }
+          }}>
+            copy md file path
           </button>
-        </label>
-        <label>
-          Css file: {selectedCssFile}
-          <button onClick={(_) => { openCssFileSelectDialog() }}>
-            select css file
+        </div>
+        <div>
+          <label>
+            Css file: {selectedCssFile}
+            {
+              isCache
+                ?
+                " (Previous cache)"
+                :
+                ""
+            }
+            <button onClick={(_) => { openCssFileSelectDialog() }}>
+              select css file
+            </button>
+          </label>
+          <button onClick={(_) => {
+            if (selectedCssFile) {
+              writeText(selectedCssFile)
+            }
+          }}>
+            copy css file path
           </button>
-        </label>
+        </div>
       </div>
       <div>
         {
           metadata ?
-          <table>
-            <thead>
-              <tr>
-                {Object.keys(metadata).map((key) => (
-                  <th key={key}>{key}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                {Object.values(metadata).map((value, index) => (
-                  <td key={index}>{value as any}</td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-          :
-          <></>
+            <table>
+              <thead>
+                <tr>
+                  {Object.keys(metadata).map((key) => (
+                    <th key={key}>{key}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  {Object.values(metadata).map((value, index) => (
+                    <td key={index}>{value as any}</td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+            :
+            <></>
         }
         <ReactMarkdown
           remarkPlugins={
