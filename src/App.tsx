@@ -25,6 +25,7 @@ window.Buffer = Buffer;
 function App() {
 
   const CUSTOM_CSS_KEY = "custom.css";
+  const TCP_CONFIG_KEY = "tcp.config";
 
   const [selectedMdFile, setSelectedMdFile] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<any>(undefined);
@@ -34,7 +35,11 @@ function App() {
   const [cssContent, setCssContent] = useState<string | undefined>(undefined);
   const [isCache, setIsCache] = useState<boolean>(true);
 
-  const [_, setStore] = useState<Store | null>(null);
+  const [store, setStore] = useState<Store | null>(null);
+
+  const [isTcpListener, setIsTcpListener] = useState<boolean>(false);
+  const [tcpAddress, setTcpAddress] = useState<string>("127.0.0.1");
+  const [tcpPort, setTcpPort] = useState<number>(7878);
 
   useEffect(() => {
     (async () => {
@@ -76,6 +81,14 @@ function App() {
         );
         setCssContent((_) => userCss?.content?.content ?? "");
       }
+
+      // 前回の TCP 設定を読み込み
+      const tcpConfig = await store.get<any>(TCP_CONFIG_KEY);
+      if (tcpConfig) {
+        setTcpAddress(tcpConfig.address);
+        setTcpPort(tcpConfig.port);
+      }
+
       setStore((_) => store);
 
       // md ファイル更新イベントを購読
@@ -102,6 +115,15 @@ function App() {
           );
         }
       });
+
+      // Listen for the new event emitted by the TCP server
+      listen('update_md_tcp', (event: any) => {
+        console.log(event);
+        const { data, content } = matter(event.payload.content);
+        setMetadata(data);
+        setMdContent((_) => content);
+      });
+
       return () => {
         unlisten();
       }
@@ -147,6 +169,19 @@ function App() {
     }
   }
 
+  const handleToggleChange = async () => {
+    setIsTcpListener(!isTcpListener);
+    if (isTcpListener) {
+      await emit('stop_tcp_listener', {});
+    } else {
+      await emit('start_tcp_listener', { address: tcpAddress, port: tcpPort });
+      if (store) {
+        store.set(TCP_CONFIG_KEY, { address: tcpAddress, port: tcpPort });
+        await store.save();
+      }
+    }
+  };
+
   return (
     <>
       <div className="container">
@@ -186,6 +221,34 @@ function App() {
           }}>
             copy css file path
           </button>
+        </div>
+        <div>
+          <label>
+            TCP Listener
+            <input
+              type="checkbox"
+              checked={isTcpListener}
+              onChange={handleToggleChange}
+            />
+          </label>
+          <div>
+            <label>
+              Address:
+              <input
+                type="text"
+                value={tcpAddress}
+                onChange={(e) => setTcpAddress(e.target.value)}
+              />
+            </label>
+            <label>
+              Port:
+              <input
+                type="number"
+                value={tcpPort}
+                onChange={(e) => setTcpPort(Number(e.target.value))}
+              />
+            </label>
+          </div>
         </div>
       </div>
       <div>
