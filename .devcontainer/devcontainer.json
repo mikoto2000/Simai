@@ -3,6 +3,7 @@
   "image": "mikoto2000/tauri:latest",
   "remoteEnv": {
     "SHELL": "bash",
+    "TERM": "xterm-256color",
     "DISPLAY": "${localEnv:DISPLAY}",
     "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
     "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}"
