@@ -149,7 +149,7 @@ fn start_watch(
     Ok(())
 }
 
-fn handle_client(stream: TcpStream, app_handle: Arc<Mutex<AppHandle>>, address: String, port: u16) {
+fn handle_client(stream: TcpStream, app_handle: Arc<Mutex<AppHandle>>) {
     let mut buffer = String::new();
     let mut reader = std::io::BufReader::new(stream);
     reader.read_to_string(&mut buffer).unwrap();
@@ -162,18 +162,13 @@ fn handle_client(stream: TcpStream, app_handle: Arc<Mutex<AppHandle>>, address: 
     let app_handle_lock = app_handle.lock().unwrap();
     app_handle_lock.emit_all("update_md_tcp", emit_object).unwrap();
     drop(app_handle_lock);
-
-    // Restart TCP listener on the same port after receiving a Markdown string
-    let app_handle = Arc::clone(&app_handle);
-    thread::spawn(move || {
-        start_tcp_server(app_handle, address, port);
-    });
 }
 
 fn start_tcp_server(
     app_handle: Arc<Mutex<AppHandle>>,
     address: String,
     port: u16,
+    stop_tcp_rx: &mpsc::Receiver<()>,
 ) {
     let listener = TcpListener::bind(format!("{}:{}", address, port)).unwrap();
     println!("TCP server listening on {}:{}", address, port);
@@ -182,15 +177,17 @@ fn start_tcp_server(
         match stream {
             Ok(stream) => {
                 let app_handle = Arc::clone(&app_handle);
-                let address = address.clone();
-                let port = port;
                 thread::spawn(move || {
-                    handle_client(stream, app_handle, address, port);
+                    handle_client(stream, app_handle);
                 });
             }
             Err(e) => {
                 println!("Error: {}", e);
             }
+        }
+        if let Ok(_) = stop_tcp_rx.try_recv() {
+            println!("KITAYO!!!!!!!!!!!");
+            break;
         }
     }
 }
@@ -283,12 +280,17 @@ fn main() {
                 let stop_tcp_rx = Arc::clone(&stop_tcp_rx);
                 let tcp_config: TcpConfig = serde_json::from_str(event.payload().unwrap()).unwrap();
                 thread::spawn(move || {
-                    start_tcp_server(app_handle, tcp_config.address, tcp_config.port);
+                    let stop_tcp_rx_lock = stop_tcp_rx.lock().unwrap();
+                    start_tcp_server(app_handle, tcp_config.address, tcp_config.port, &stop_tcp_rx_lock);
+                    drop(stop_tcp_rx_lock);
                 });
             });
 
-            app.listen_global("stop_tcp_listener", move |_| {
+            app.listen_global("stop_tcp_listener", move |event| {
                 stop_tcp_tx.send(()).unwrap();
+                let tcp_config: TcpConfig = serde_json::from_str(event.payload().unwrap()).unwrap();
+                let stream = std::net::TcpStream::connect(format!("{}:{}", tcp_config.address, tcp_config.port));
+                drop(stream);
                 println!("TCP listener stopped.");
             });
 

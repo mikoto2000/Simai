@@ -172,7 +172,7 @@ function App() {
   const handleToggleChange = async () => {
     setIsTcpListener(!isTcpListener);
     if (isTcpListener) {
-      await emit('stop_tcp_listener', {});
+      await emit('stop_tcp_listener', { address: tcpAddress, port: tcpPort });
     } else {
       await emit('start_tcp_listener', { address: tcpAddress, port: tcpPort });
       if (store) {
