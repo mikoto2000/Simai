@@ -149,7 +149,7 @@ fn start_watch(
     Ok(())
 }
 
-fn handle_client(stream: TcpStream, app_handle: Arc<Mutex<AppHandle>>) {
+fn handle_client(stream: TcpStream, app_handle: Arc<Mutex<AppHandle>>, address: String, port: u16) {
     let mut buffer = String::new();
     let mut reader = std::io::BufReader::new(stream);
     reader.read_to_string(&mut buffer).unwrap();
@@ -162,12 +162,17 @@ fn handle_client(stream: TcpStream, app_handle: Arc<Mutex<AppHandle>>) {
     let app_handle_lock = app_handle.lock().unwrap();
     app_handle_lock.emit_all("update_md_tcp", emit_object).unwrap();
     drop(app_handle_lock);
+
+    // Restart TCP listener on the same port after receiving a Markdown string
+    let app_handle = Arc::clone(&app_handle);
+    thread::spawn(move || {
+        start_tcp_server(app_handle, address, port);
+    });
 }
 
 fn start_tcp_server(
     app_handle: Arc<Mutex<AppHandle>>,
-    stop_rx: Arc<Mutex<mpsc::Receiver<()>>>,
-    address: &str,
+    address: String,
     port: u16,
 ) {
     let listener = TcpListener::bind(format!("{}:{}", address, port)).unwrap();
@@ -177,18 +182,15 @@ fn start_tcp_server(
         match stream {
             Ok(stream) => {
                 let app_handle = Arc::clone(&app_handle);
+                let address = address.clone();
+                let port = port;
                 thread::spawn(move || {
-                    handle_client(stream, app_handle);
+                    handle_client(stream, app_handle, address, port);
                 });
             }
             Err(e) => {
                 println!("Error: {}", e);
             }
-        }
-
-        if stop_rx.lock().unwrap().try_recv().is_ok() {
-            println!("Shutting down TCP server.");
-            break;
         }
     }
 }
@@ -281,7 +283,7 @@ fn main() {
                 let app_handle = Arc::clone(&app_handle);
                 let stop_tcp_rx = Arc::clone(&stop_tcp_rx);
                 thread::spawn(move || {
-                    start_tcp_server(app_handle, stop_tcp_rx, "127.0.0.1", 7878);
+                    start_tcp_server(app_handle, "127.0.0.1".to_string(), 7878);
                 });
             }
 
@@ -290,7 +292,7 @@ fn main() {
                 let stop_tcp_rx = Arc::clone(&stop_tcp_rx);
                 let tcp_config: TcpConfig = serde_json::from_str(event.payload().unwrap()).unwrap();
                 thread::spawn(move || {
-                    start_tcp_server(app_handle, stop_tcp_rx, &tcp_config.address, tcp_config.port);
+                    start_tcp_server(app_handle, tcp_config.address, tcp_config.port);
                 });
             });
 
