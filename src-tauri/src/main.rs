@@ -278,15 +278,6 @@ fn main() {
                 });
             }
 
-            // Start TCP server
-            {
-                let app_handle = Arc::clone(&app_handle);
-                let stop_tcp_rx = Arc::clone(&stop_tcp_rx);
-                thread::spawn(move || {
-                    start_tcp_server(app_handle, "127.0.0.1".to_string(), 7878);
-                });
-            }
-
             app.listen_global("start_tcp_listener", move |event| {
                 let app_handle = Arc::clone(&app_handle);
                 let stop_tcp_rx = Arc::clone(&stop_tcp_rx);
