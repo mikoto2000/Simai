@@ -1,9 +1,9 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{path::Path, sync::mpsc};
@@ -26,6 +26,12 @@ struct TargetFile {
 struct UpdateFile {
     path: String,
     content: String,
+}
+
+#[derive(Deserialize)]
+struct TcpConfig {
+    address: String,
+    port: u16,
 }
 
 fn start_watch(
@@ -143,6 +149,49 @@ fn start_watch(
     Ok(())
 }
 
+fn handle_client(stream: TcpStream, app_handle: Arc<Mutex<AppHandle>>) {
+    let mut buffer = String::new();
+    let mut reader = std::io::BufReader::new(stream);
+    reader.read_to_string(&mut buffer).unwrap();
+
+    let emit_object = UpdateFile {
+        path: "tcp".to_string(),
+        content: buffer.clone(),
+    };
+
+    let app_handle_lock = app_handle.lock().unwrap();
+    app_handle_lock.emit_all("update_md_tcp", emit_object).unwrap();
+    drop(app_handle_lock);
+}
+
+fn start_tcp_server(
+    app_handle: Arc<Mutex<AppHandle>>,
+    address: String,
+    port: u16,
+    stop_tcp_rx: &mpsc::Receiver<()>,
+) {
+    let listener = TcpListener::bind(format!("{}:{}", address, port)).unwrap();
+    println!("TCP server listening on {}:{}", address, port);
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                let app_handle = Arc::clone(&app_handle);
+                thread::spawn(move || {
+                    handle_client(stream, app_handle);
+                });
+            }
+            Err(e) => {
+                println!("Error: {}", e);
+            }
+        }
+        if let Ok(_) = stop_tcp_rx.try_recv() {
+            println!("KITAYO!!!!!!!!!!!");
+            break;
+        }
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -154,6 +203,10 @@ fn main() {
             // シミュレーション用の送受信チャンネル
             let (stop_tx, stop_rx) = std::sync::mpsc::channel();
             let stop_rx = Arc::new(Mutex::new(stop_rx));
+
+            // TCP server stop channel
+            let (stop_tcp_tx, stop_tcp_rx) = std::sync::mpsc::channel();
+            let stop_tcp_rx = Arc::new(Mutex::new(stop_tcp_rx));
 
             {
                 let app_handle = Arc::clone(&app_handle);
@@ -174,9 +227,12 @@ fn main() {
             // グローバルリスナーの設定
             {
                 let app_handle = Arc::clone(&app_handle);
+                let stop_rx = Arc::clone(&stop_rx);
+                let stop_tcp_tx = stop_tcp_tx.clone();
                 app.listen_global("start_watch_md", move |event| {
                     let app_handle = Arc::clone(&app_handle);
                     let stop_rx = Arc::clone(&stop_rx);
+                    let stop_tcp_tx = stop_tcp_tx.clone();
                     println!("start_watch_md");
                     thread::spawn(move || {
                         let stop_rx_lock = stop_rx.lock().unwrap();
@@ -184,6 +240,7 @@ fn main() {
                         let target_file = serde_json::from_str::<TargetFile>(&file_path).unwrap();
                         start_watch(app_handle, &target_file.path, &stop_rx_lock, "update_md")
                             .unwrap();
+                        stop_tcp_tx.send(()).unwrap();
                     });
                 });
             }
@@ -197,15 +254,18 @@ fn main() {
             {
                 let app_handle = Arc::clone(&app_handle);
                 let stop_rx_css = Arc::new(Mutex::new(stop_rx_css));
+                let stop_tcp_tx = stop_tcp_tx.clone();
                 app.listen_global("start_watch_css", move |event| {
                     let app_handle = Arc::clone(&app_handle);
                     let stop_rx_css = Arc::clone(&stop_rx_css);
+                    let stop_tcp_tx = stop_tcp_tx.clone();
                     thread::spawn(move || {
                         let stop_rx_lock = stop_rx_css.lock().unwrap();
                         let file_path = event.payload().unwrap().to_string();
                         let target_file = serde_json::from_str::<TargetFile>(&file_path).unwrap();
                         start_watch(app_handle, &target_file.path, &stop_rx_lock, "update_css")
                             .unwrap();
+                        stop_tcp_tx.send(()).unwrap();
                     });
                 });
 
@@ -214,6 +274,25 @@ fn main() {
                     println!("stoped.");
                 });
             }
+
+            app.listen_global("start_tcp_listener", move |event| {
+                let app_handle = Arc::clone(&app_handle);
+                let stop_tcp_rx = Arc::clone(&stop_tcp_rx);
+                let tcp_config: TcpConfig = serde_json::from_str(event.payload().unwrap()).unwrap();
+                thread::spawn(move || {
+                    let stop_tcp_rx_lock = stop_tcp_rx.lock().unwrap();
+                    start_tcp_server(app_handle, tcp_config.address, tcp_config.port, &stop_tcp_rx_lock);
+                    drop(stop_tcp_rx_lock);
+                });
+            });
+
+            app.listen_global("stop_tcp_listener", move |event| {
+                stop_tcp_tx.send(()).unwrap();
+                let tcp_config: TcpConfig = serde_json::from_str(event.payload().unwrap()).unwrap();
+                let stream = std::net::TcpStream::connect(format!("{}:{}", tcp_config.address, tcp_config.port));
+                drop(stream);
+                println!("TCP listener stopped.");
+            });
 
             Ok(())
         })
