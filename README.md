@@ -12,6 +12,7 @@ Simai is **Si**mple **Ma**rkdown Prev**i**ewer.
 - 右上の `select md file` ボタンでファイル選択ダイアログを開き、プレビューしたいファイルを選択する
 - 右上の `TCP Listener` のチェックボックスを ON にすると、その下の入力欄 `Address`, `Port` でマークダウン文字列をリッスンします
     - TCP で接続してから、切断するまでに受信した文字列をマークダウンとして解釈し、画面に表示します
+    - TCP 受信は Markdown のみ対応です（HTML としてのレンダリングは行いません）
 
 
 ## Install:
@@ -31,4 +32,3 @@ This software is released under the MIT License, see LICENSE
 ## Author:
 
 mikoto2000 <mikoto2000@gmail.com>
-
