@@ -22,14 +22,17 @@ import { Buffer } from "buffer";
 import { writeText } from "@tauri-apps/api/clipboard";
 window.Buffer = Buffer;
 
+type ContentType = "markdown" | "html";
+
 function App() {
 
   const CUSTOM_CSS_KEY = "custom.css";
   const TCP_CONFIG_KEY = "tcp.config";
 
-  const [selectedMdFile, setSelectedMdFile] = useState<string | null>(null);
+  const [selectedContentFile, setSelectedContentFile] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<any>(undefined);
-  const [mdContent, setMdContent] = useState<string>("");
+  const [contentType, setContentType] = useState<ContentType>("markdown");
+  const [content, setContent] = useState<string>("");
 
   const [selectedCssFile, setSelectedCssFile] = useState<string | null>(null);
   const [cssContent, setCssContent] = useState<string | undefined>(undefined);
@@ -57,7 +60,10 @@ function App() {
               await emit('stop_watch_css', {});
               await emit('start_watch_css', { path: filePath });
             } else {
-              setSelectedMdFile((_) => filePath);
+              setSelectedContentFile((_) => filePath);
+              setContentType(isHtmlFile(filePath) ? "html" : "markdown");
+              setMetadata(undefined);
+              setContent("");
               await emit('stop_watch_md', {});
               await emit('start_watch_md', { path: filePath });
             }
@@ -94,10 +100,7 @@ function App() {
       // md ファイル更新イベントを購読
       listen('update_md', (event: any) => {
         console.log(event);
-        const { data, content } = matter(event.payload.content);
-        setSelectedMdFile((_) => event.payload.path);
-        setMetadata(data);
-        setMdContent((_) => content);
+        handleContentUpdate(event.payload.path, event.payload.content);
       });
 
       // css ファイル更新イベントを購読
@@ -119,9 +122,7 @@ function App() {
       // Listen for the new event emitted by the TCP server
       listen('update_md_tcp', (event: any) => {
         console.log(event);
-        const { data, content } = matter(event.payload.content);
-        setMetadata(data);
-        setMdContent((_) => content);
+        handleContentUpdate("tcp", event.payload.content);
       });
 
       return () => {
@@ -130,19 +131,44 @@ function App() {
     })();
   }, []);
 
-  async function openMdFileSelectDialog() {
+  const isHtmlFile = (path: string | null) => {
+    if (!path) {
+      return false;
+    }
+    return path.toLowerCase().endsWith(".html") || path.toLowerCase().endsWith(".htm");
+  };
+
+  const handleContentUpdate = (path: string, nextContent: string) => {
+    if (isHtmlFile(path)) {
+      setContentType("html");
+      setMetadata(undefined);
+      setContent(nextContent);
+    } else {
+      const { data, content } = matter(nextContent);
+      const hasMetadata = data && Object.keys(data).length > 0;
+      setContentType("markdown");
+      setMetadata(hasMetadata ? data : undefined);
+      setContent((_) => content);
+    }
+    setSelectedContentFile((_) => path);
+  };
+
+  async function openContentFileSelectDialog() {
     const selected = await open({
-      title: 'Select markdown file.',
+      title: 'Select markdown/html file.',
       multiple: false,
       filters: [{
-        name: 'markdown',
-        extensions: ['md', 'markdown']
+        name: 'markdown/html',
+        extensions: ['md', 'markdown', 'html', 'htm']
       }]
     });
 
     if (typeof selected === 'string') {
       console.log(selected);
-      setSelectedMdFile((_) => selected);
+      setSelectedContentFile((_) => selected);
+      setContentType(isHtmlFile(selected) ? "html" : "markdown");
+      setMetadata(undefined);
+      setContent("");
       await emit('stop_watch_md', {});
       await emit('start_watch_md', { path: selected });
 
@@ -187,17 +213,17 @@ function App() {
       <div className="container">
         <div>
           <label>
-            Markdown file: {selectedMdFile}
-            <button onClick={(_) => { openMdFileSelectDialog() }}>
-              select md file
+            Markdown/HTML file: {selectedContentFile}
+            <button onClick={(_) => { openContentFileSelectDialog() }}>
+              select md/html file
             </button>
           </label>
           <button onClick={(_) => {
-            if (selectedMdFile) {
-              writeText(selectedMdFile)
+            if (selectedContentFile) {
+              writeText(selectedContentFile)
             }
           }}>
-            copy md file path
+            copy file path
           </button>
         </div>
         <div>
@@ -273,17 +299,23 @@ function App() {
             :
             <></>
         }
-        <ReactMarkdown
-          remarkPlugins={
-            [
-              remarkGfm,
-              [remarkToc, { heading: '目次' }]
-            ]
-          }
-          rehypePlugins={[rehypeRaw]}
-          children={
-            "# 目次\n\n" + mdContent
-          } />
+        {
+          contentType === "html"
+            ?
+            <div dangerouslySetInnerHTML={{ __html: content }} />
+            :
+            <ReactMarkdown
+              remarkPlugins={
+                [
+                  remarkGfm,
+                  [remarkToc, { heading: '目次' }]
+                ]
+              }
+              rehypePlugins={[rehypeRaw]}
+              children={
+                "# 目次\n\n" + content
+              } />
+        }
       </div>
       <style>
         {cssContent ? cssContent : ""}
